@@ -1,0 +1,48 @@
+﻿@{
+    ViewData["Title"] = "Home Page";
+}
+
+    <div class="text-center">
+        <h1 class="display-4">Welcome</h1>
+        <p>Learn about <a href="https://docs.microsoft.com/aspnet/core">building Web apps with ASP.NET Core</a>.</p>
+        <button onclick="ObservableInterval()">Observable Interval</button>
+        <button onclick="Buffer()">Buffer</button>
+        <button onclick="Subject()">Subject</button>
+    </div>
+
+@section Scripts{
+    <script>
+        var repeat = 0;
+        var timeOutVar;
+        var connection = new signalR.HubConnectionBuilder().withUrl("/rxHub").build();
+
+        function SignalRStart() {
+            connection.start().then(function () {
+                repeat = 0;
+                clearTimeout(timeOutVar);
+            }).catch(function (err) { return console.error(err.toString()); });
+        }
+
+        connection.onclose(function () {
+            if (repeat == 0) {
+                timeOutVar = setInterval(function () {
+                    repeat++;
+                    if (repeat > 10) {
+                        location.reload();
+                        return;
+                    }
+                    SignalRStart();
+                }, 2000);
+            }
+        });
+        SignalRStart();
+
+        connection.on("SendTime", function (message) {
+            console.log(message);
+        });
+
+        function ObservableInterval() { $.get('/home/ObservableInterval');}
+        function Buffer() { $.get('/home/Dapper'); }
+        function Subject() { $.get('/home/Subject'); }
+    </script>
+}
