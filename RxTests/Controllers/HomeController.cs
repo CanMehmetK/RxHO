@@ -8,6 +8,7 @@ using System.Reactive.Disposables;
 using System.Reactive.Linq;
 using System.Reactive.Subjects;
 using System.Reactive.Threading.Tasks;
+using System.Threading;
 using System.Threading.Tasks;
 using Dapper;
 using Microsoft.AspNetCore.Mvc;
@@ -57,43 +58,14 @@ namespace RxTests.Controllers
             }
         }
 
-        public IActionResult Delay()
-        {
-            var source = Observable.Interval(TimeSpan.FromSeconds(1)).Take(5).Timestamp();
-
-            var delay = source.Delay(TimeSpan.FromSeconds(2));
-            source.Subscribe(buffer => _rxHubContext.Clients.All.SendAsync("SendTime", buffer));
-
-            delay.Subscribe(buffer => _rxHubContext.Clients.All.SendAsync("SendTime", buffer));
-            
-            // Delay OnError bildirimlerini ertelemez.
-
-            return Ok();
-        }
-
-        public IActionResult Sample()
-        {
-            var interval = Observable.Interval(TimeSpan.FromMilliseconds(150));
-            interval.Sample(TimeSpan.FromSeconds(1)).Subscribe(buffer => _rxHubContext.Clients.All.SendAsync("SendTime", buffer));
-
-            // timespandeki her spesifik alanın son değerini alır.This is great for getting timely data from a sequence that produces too much information for your requirements.
-
-            return Ok();
-        }
-
-        public IActionResult Throttle()
-        {
-            return Ok();
-        }
-
-        #region Buffer,Subject bla bla bla
+        #region Data can be buffered, throttled, sampled or delay to meet your needs.
         public IActionResult Buffer()
         {
             //var idealBatchSize = 15;
             //var maxTimeDelay = TimeSpan.FromSeconds
             //    (3);
             //var source = Observable.Interval(TimeSpan.FromSeconds(1)).Take(10).Concat(Observable.Interval(TimeSpan.FromSeconds(0.01)).Take(100));
-            //source.Buffer(maxTimeDelay, idealBatchSize).Subscribe(buffer => _rxHubContext.Clients.All.SendAsync("SendTime",buffer));
+            //source.Buffer(maxTimeDelay, idealBatchSize).Subscribe(buffer => _rxHubContext.Clients.All.SendAsync("SendTime", buffer.Count));
 
             // Buffer ile ilgili zımbırtılar
 
@@ -110,6 +82,56 @@ namespace RxTests.Controllers
 
             return Ok();
         }
+        public IActionResult Delay() // Bütün sequence zaman olarak yer değiştirebilir.
+        {
+            var source = Observable.Interval(TimeSpan.FromSeconds(1)).Take(5).Timestamp();
+
+            var delay = source.Delay(TimeSpan.FromSeconds(2));
+            source.Subscribe(buffer => _rxHubContext.Clients.All.SendAsync("SendTime", buffer));
+
+            delay.Subscribe(buffer => _rxHubContext.Clients.All.SendAsync("SendTime", buffer));
+
+            // Delay OnError bildirimlerini ertelemez.
+
+            return Ok();
+        }
+
+        public IActionResult Sample()
+        {
+            var interval = Observable.Interval(TimeSpan.FromMilliseconds(150));
+            interval.Sample(TimeSpan.FromSeconds(1)).Subscribe(buffer => _rxHubContext.Clients.All.SendAsync("SendTime", buffer));
+
+            // timespandeki her spesifik alanın son değerini alır.This is great for getting timely data from a sequence that produces too much information for your requirements.
+
+            return Ok();
+        }
+
+        public IActionResult Throttle() // Açılır kapanır bir pencere gibi, ne zaman bir değer getirirse pencere kapanır.Sample gibi bir zaman aralığındaki son değeri alır. Throttle method is only useful for sequences that produce values at a variable rate.
+        {
+            //pdf olarak bir tane örneği var.
+            return Ok();
+        }
+        #endregion
+        public IActionResult Timeout() // belirli bir zaman aralığında bir değer almazsak timeouta düşeriz., timeliness of data can be asserted.
+        {
+            //var source = Observable.Interval(TimeSpan.FromMilliseconds(100)).Take(10).Concat(Observable.Interval(TimeSpan.FromSeconds(2)));
+
+            //var timeout = source.Timeout(TimeSpan.FromSeconds(1));
+            //timeout.Subscribe(num => _rxHubContext.Clients.All.SendAsync("SendTime", num));
+
+            // ---------------------
+
+            var dueDate = DateTimeOffset.UtcNow.AddSeconds(4);
+            var source = Observable.Interval(TimeSpan.FromSeconds(1));
+            var timeout = source.Timeout(dueDate).Subscribe(num => _rxHubContext.Clients.All.SendAsync("SendTime", num));
+
+            return Ok();
+
+        } 
+       
+
+        #region blah blah
+       
         public IActionResult Subject()
         {
             return Ok();
@@ -143,6 +165,7 @@ namespace RxTests.Controllers
         }
 
 
+        #region 1'den fazla sequenceları birleştirip gelen dataları nasıl görmek istiyorsak zip, and, then, when
         public IActionResult ZipZip() // Aslında fermuar, 2 sequencetaki değerleri pair olarak bizlere gösterir, ilk sequence bittiğinde durur. 2sinden biri hata verirse en fresh değeri gösterir.
         {
             var nums = Observable.Interval(TimeSpan.FromMilliseconds(250)).Take(3);
@@ -199,17 +222,20 @@ namespace RxTests.Controllers
                     Iki = ikinci,
                     Uc = ucuncu
                 })
-                ).Subscribe(num=> {
+                ).Subscribe(num =>
+                {
                     _rxHubContext.Clients.All.SendAsync("SendTime", num);
                 })
                 ;
 
-            
+
 
             return Ok();
         }
+        #endregion
 
 
+        #region hataya düşürdüm.
         public async Task<IActionResult> Deniyoruz() // Catch bütün hataları bulur ve YUTAR. "try{DoSomeWork();}catch{}" gibi. TimeoutException diye bir şey de var.
         {
             var source = new Subject<int>();
@@ -233,7 +259,8 @@ namespace RxTests.Controllers
             source.OnError(new TimeoutException());
 
             return Ok();
-        }
+        } 
+        #endregion
 
         //public IActionResult UsingDenemeleri() // kendi methodlarımı eklemek gerekebilir.
         //{
@@ -259,6 +286,30 @@ namespace RxTests.Controllers
 
             return Ok();
 
+        }
+
+        public IActionResult Wizard() // sadece observable instanceları değil Gerçek data değerlerini paylaşabilmek istiyorsak Publish(). Bu bize IConnectableObservable<T> dönüyor, bunun için ise Connect() kullanıp, bu sharing functionality'e ulaşabiliriz.
+        {
+            //var period = TimeSpan.FromSeconds(1);
+            //var observable = Observable.Interval(period).Publish();
+            //observable.Connect();
+            //observable.Subscribe(num => _rxHubContext.Clients.All.SendAsync("SendTime", num));
+            //Thread.Sleep(period);
+            //observable.Subscribe(num => _rxHubContext.Clients.All.SendAsync("SendTime", num));
+
+            // Sleep ile bile 2 subscription da yapılmadan gerçek anlamda subscribe olamıyoruz.
+
+            //------------- Bu yazım aslında bir uygulama data sequence'ları paylaşma gereksinimi duyduğunda gayet kullanışlı.
+
+            var period = TimeSpan.FromSeconds(1);
+            var observable = Observable.Interval(period).Publish();
+            observable.Subscribe(i => _rxHubContext.Clients.All.SendAsync("SendTime", i));
+            Thread.Sleep(period);
+            observable.Subscribe(i => _rxHubContext.Clients.All.SendAsync("SendTime", i));
+
+            observable.Connect();
+
+            return Ok();
         }
 
 
