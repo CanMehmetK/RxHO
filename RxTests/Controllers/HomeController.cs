@@ -2,8 +2,10 @@
 using System.Collections.Generic;
 using System.Data;
 using System.Diagnostics;
+using System.IO;
 using System.Linq;
 using System.Reactive;
+using System.Reactive.Concurrency;
 using System.Reactive.Disposables;
 using System.Reactive.Linq;
 using System.Reactive.Subjects;
@@ -127,11 +129,11 @@ namespace RxTests.Controllers
 
             return Ok();
 
-        } 
-       
+        }
+
 
         #region blah blah
-       
+
         public IActionResult Subject()
         {
             return Ok();
@@ -142,6 +144,7 @@ namespace RxTests.Controllers
             // Veri işle
         }
         #endregion
+
 
         public async Task<IActionResult> DurArtikBe()
         {
@@ -259,7 +262,7 @@ namespace RxTests.Controllers
             source.OnError(new TimeoutException());
 
             return Ok();
-        } 
+        }
         #endregion
 
         //public IActionResult UsingDenemeleri() // kendi methodlarımı eklemek gerekebilir.
@@ -311,7 +314,127 @@ namespace RxTests.Controllers
 
             return Ok();
         }
+        #region Bu 2 arkadaş UI application yazarken çok yararlıymış, çünkü; UI threadini blocklamak istemeyiz ama UI thread'indeki UI objectlerini updatelememiz lazım.
+        //
+        public IActionResult SubscribeOn() // we should use this to describe how we want any warm-up and background processing code to be scheduled. Bütün actionlar aynı thread içinde oluyor, ve her şey sequential. Subscription oldugunda Create çağırılmış oluyor,Create bitene kadar synchronous kalıyor.
+                                           // //‌.SubscribeOn(‌Scheduler‌.ThreadPool)'ı eklediğimizde executionın sırası değişiyor. Bunu ekledikten sonra subscribe artık non-blocking.
 
+
+        {
+            return Ok();
+        }
+
+        public IActionResult ObserveOn()
+        //is used to declare where you want your notifications to be scheduled to. most useful when working with STA systems, most commonly UI apps
+        {
+            return Ok();
+        }
+        #endregion
+
+        public IActionResult BuNe()
+        {
+            // Here we pass myName as the state. We also pass a delegate that will take the state and return a disposable. The disposable is used for cancellation.
+            // The delegate also takes an IScheduler parameter, which we name "_".This is the convention to indicate we are ignoring the argument. 
+            // When we pass myName as the state, a reference to the state is kept internally. So when we update the myName variable to "John", the reference to "Lee" is still maintaine by the scheduler's internal workings.
+            // ÇIKMAZLARI ÖNLEMEK İÇİN SCHEDULE METHODLARINI KULLANABİLİRİZ
+            // With any concurrent software, you should avoid modifying shared state.
+            // IScheduler type'i, adından da belli olduğu gibi bir actionı ileri bir tarihte execute edebileceğimiz anlamına gelir
+
+            //var myName = "Lee";
+            //Scheduler.Schedule(myName,
+            //    (_,state) =>
+            //    {
+            //        _rxHubContext.Clients.All.SendAsync("SendTime", state);
+            //        return Disposable.Empty;
+            //    }
+
+            //    )
+            //    ;
+            //myName = "John";
+
+
+
+            //Schedule'ı nasıl kullanacağımı anlayamadım. 
+
+            //var delay = TimeSpan.FromSeconds(1);
+
+            //_rxHubContext.Clients.All.SendAsync("Before school", DateTime.Now);
+
+            //Scheduler.Schedule(delay,
+            //    ()=> _rxHubContext.Clients.All.SendAsync("Inside school", DateTime.Now));
+
+            //_rxHubContext.Clients.All.SendAsync("After school", DateTime.Now);
+
+            /*  !!!!!!!!!----------!!!!!!!
+             *      Diyelim ki;çalışmakta olan bir işi iptal etmek istiyorum, ve IDisposable'dan dispose yapmam gerekiyor, ama işi hala yapıyorsam disposable'a nasıl geri döneceğim?
+             *  Başka bir thread açıp iş concurrent olarak çalışabilir ama thread yaratmaktan kaçıyoruz zaten.    
+            */
+
+            // Rx takes our recursive method and transforms it to a lopp structure instead. Brilliant!
+
+            return Ok();
+        }
+
+        public IActionResult EventLoopScheduler()
+        // Allows us to designate a specific thread to a scheduler.CurrentThreadScheduler nasıl içiçe scheduled actionlar için trambolin görevi görüyorsa,
+        // bu arkadaş da aynı mekanizmayı sağlar. Arasındaki fark ise EventLoopScheduler'da schedule etmek için bizim istediğimiz thread kullanılır. EventLoopScheduler can be created with an empty constructor, or you can oass it a thread factory delegate.
+        // diyelim ki thread adını koyduk, prioritysini ve cultureını belirledik ve en önemlisi bu thread bir background threadi mi değil mi onu belirledik.
+        // unutmayalım eğer thread's propertysi olan IsBackground'u  false yapmazsak, thread terminate olana kadar application wont terminate.
+        // EventLoopScheduler IDisposable implement edip Dispose çağırdığı için, threadi terminate etmemize izin verir.
+        {
+            return Ok();
+        }
+
+        public IActionResult NewThreadScheduler()
+            //threadin veya EventLoopScheduler'ın resourcelari ile uğraşmak istemiyorsak;
+            //Kendi NewThreadScheduler instanceımızı yaratabilir veya Scheduler.NewThread propertysinin statik instanceına erişip kullanabiliriz.
+            //contstructor, Kendi factorymizi sağlıyorsak, IsBackground'ı uygun bir şekilde set etmeliyiz.
+            //Eğer Schedule çağırıyorsak, aslında yapmış olduğumuz iş EventLoopScheduler yaratmak.
+            //Bu yol ile herhangi içiçe olan schedule'lar aynı thread içinde olacak. Subsequent'ler(non-nested) ise Schedule'ı yeni EventLoopScheduler çağırmak ve thread factory function'ı yeni bir thread çağırmak için kullanır.
+            
+        {
+            return Ok();
+        }
+
+        public IActionResult ThreadPoolScheduler()
+            //bu arkadaş basitçe ThreadPool'a tunnel request oluyor. 
+            //For requests that are scheduled ASAP, the action is just sent to ThreadPool.QueueUserWorkItem. 
+            //Daha sonrası için schedulelanan requestler için ise, System.Threading.Timer
+            //Bir önceki Schedulelar gibi bundaki nested'lar seriler şeklinde gelmeyebilir.
+        {
+            //_rxHubContext.Clients.All.SendAsync("SendTime", Thread.CurrentThread.ManagedThreadId);
+            //Scheduler.ThreadPool.Schedule("A", OuterAction);
+            //Scheduler.ThreadPool.Schedule("B", OuterAction);
+
+            return Ok();
+        }
+
+        public IActionResult TaskPool()
+        {
+            return Ok();
+        }
+
+        public IActionResult Files()
+        {
+            var source = new FileStream(@"C:\Somefile.txt", FileMode.Open, FileAccess.Read);
+
+            var factory = Observable.FromAsyncPattern<byte[], int, int, int>(source.BeginRead, source.EndRead);
+            var buffer = new byte[source.Length];
+            IObservable<int> reader = factory(buffer, 0, (int)source.Length);
+            reader.Subscribe(bytesRead => _rxHubContext.Clients.All.SendAsync("SendTime", bytesRead));
+            return Ok();
+
+            
+
+
+
+            /* Her şey OK ama if we want to read CHUNKS OF DATA at a time, this is not good. Buffer size'ını spesifik bir değer olarak belirlememiz gerekli, mesela 4KB(4096 bytes)
+        İşe yarar ama yalnızca 4kb'lık bir alanı okur,As the position of the FileStream will have advanced to the point it stopped reading, we can reuse the factory
+        to reload the buffer.
+        Next, we want to start pushing these bytes into an observable sequence.
+             
+             */
+        }
 
         public IActionResult ObservableInterval()
         {
@@ -320,7 +443,7 @@ namespace RxTests.Controllers
 
             var stringsFromNumbers = from n in oneNumberPerSecond
                                      select new string('*', (int)n);  // Her bir tetikleme için artan sayı kadar tetiklemenin sonucunda yızdız basar.
-
+            
             _rxHubContext.Clients.All.SendAsync("SendTime", DateTime.Now.ToString("Strings from numbers:")); //
 
             stringsFromNumbers.Subscribe(num =>
