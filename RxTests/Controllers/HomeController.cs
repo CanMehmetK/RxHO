@@ -15,7 +15,9 @@ using System.Threading.Tasks;
 using Dapper;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.SignalR;
+using Microsoft.Reactive.Testing;
 using MySql.Data.MySqlClient;
+using NUnit.Framework;
 using RxTests.Models;
 using RxTests.SampleExtensions;
 
@@ -331,6 +333,42 @@ namespace RxTests.Controllers
         }
         #endregion
 
+
+        /*
+         *------------Uygun Scheduler'ı seçmek------------
+         *Hangisini ne zaman kullanacağımızı bilmek biraz zaman alabilir ve zorlayıcıdır.
+         *                      UI Applications
+         * The final subscriber is normally the presentation layer and should control the scheduling.
+         * Observe on the DispatcherScheduler to allow updating of ViewModels
+         * Subscribe on a background thread to prevenet the UI from becoming unresponsive
+         * 
+         * If the subscription will not block for more than 50ms then
+         *  Use the "TaskPoolScheduler" if available, or
+         *  Use the ThreadPoolScheduler"
+         * If any part of the subscription could block for longer than 50ms, then you should use the "NewThreadScheduler"
+         *                       
+         *                       
+         *                       
+         *                       Service Layer
+         * If your service is reading data from a queue of some sort, consider using a dedicated EventLoopScheduler.
+         * This way, you can preserve order of events
+         * If processing an item is expensive(>50ms or requires I/O), then consider using a NewThreadScheduler
+         * If you just need the scheduler for a time, e.g. for Observable.Interval or Observable.Timer, then favor the "TaskPool". 
+         * Use the "ThreadPool" if the "TaskPool" is not available  to your platform.
+         * 
+         * 
+         * 
+         * 
+         * The ThreadPool(and the TaskPool by proxy) have a time delay before they will increase the number of threads that they use. This delay is 500ms. Let us
+         * consider a PC with two cores that we will schedule four actions onto. By default, the thread pool size will be the number of cores(2). If each action
+         * takes 1000ms, then two actions will be sitting in the queue for 500ms before the thread pool size is increased. Instead of running all four actions in
+         * parallel,which would take one second in total, the work is not completed for 1.5 seconds as two of the actions sat in the queue for 500ms. For this
+         * reason, you should only schedule work that is very fast to execute(guideline 50ms) onto the ThreadPool or TaskPool. Conversely, creating a new thread
+         * is not free, but with the power of processors today the creation of a thread for work over 50ms is a small cost.
+         * 
+         * 
+         */
+        #region Scheduling
         public IActionResult BuNe()
         {
             // Here we pass myName as the state. We also pass a delegate that will take the state and return a disposable. The disposable is used for cancellation.
@@ -386,21 +424,21 @@ namespace RxTests.Controllers
         }
 
         public IActionResult NewThreadScheduler()
-            //threadin veya EventLoopScheduler'ın resourcelari ile uğraşmak istemiyorsak;
-            //Kendi NewThreadScheduler instanceımızı yaratabilir veya Scheduler.NewThread propertysinin statik instanceına erişip kullanabiliriz.
-            //contstructor, Kendi factorymizi sağlıyorsak, IsBackground'ı uygun bir şekilde set etmeliyiz.
-            //Eğer Schedule çağırıyorsak, aslında yapmış olduğumuz iş EventLoopScheduler yaratmak.
-            //Bu yol ile herhangi içiçe olan schedule'lar aynı thread içinde olacak. Subsequent'ler(non-nested) ise Schedule'ı yeni EventLoopScheduler çağırmak ve thread factory function'ı yeni bir thread çağırmak için kullanır.
-            
+        //threadin veya EventLoopScheduler'ın resourcelari ile uğraşmak istemiyorsak;
+        //Kendi NewThreadScheduler instanceımızı yaratabilir veya Scheduler.NewThread propertysinin statik instanceına erişip kullanabiliriz.
+        //contstructor, Kendi factorymizi sağlıyorsak, IsBackground'ı uygun bir şekilde set etmeliyiz.
+        //Eğer Schedule çağırıyorsak, aslında yapmış olduğumuz iş EventLoopScheduler yaratmak.
+        //Bu yol ile herhangi içiçe olan schedule'lar aynı thread içinde olacak. Subsequent'ler(non-nested) ise Schedule'ı yeni EventLoopScheduler çağırmak ve thread factory function'ı yeni bir thread çağırmak için kullanır.
+
         {
             return Ok();
         }
 
         public IActionResult ThreadPoolScheduler()
-            //bu arkadaş basitçe ThreadPool'a tunnel request oluyor. 
-            //For requests that are scheduled ASAP, the action is just sent to ThreadPool.QueueUserWorkItem. 
-            //Daha sonrası için schedulelanan requestler için ise, System.Threading.Timer
-            //Bir önceki Schedulelar gibi bundaki nested'lar seriler şeklinde gelmeyebilir.
+        //bu arkadaş basitçe ThreadPool'a tunnel request oluyor. 
+        //For requests that are scheduled ASAP, the action is just sent to ThreadPool.QueueUserWorkItem. 
+        //Daha sonrası için schedulelanan requestler için ise, System.Threading.Timer
+        //Bir önceki Schedulelar gibi bundaki nested'lar seriler şeklinde gelmeyebilir.
         {
             //_rxHubContext.Clients.All.SendAsync("SendTime", Thread.CurrentThread.ManagedThreadId);
             //Scheduler.ThreadPool.Schedule("A", OuterAction);
@@ -410,9 +448,13 @@ namespace RxTests.Controllers
         }
 
         public IActionResult TaskPool()
+        //TaskPoolScheduler, ThreadPoolScheduler'a çok benzer. Uygun olduğu zaman(senin hedef framework'üne göre), you should favor it over the later.
+        //ThreadPoolScheduler gibi içiçe scheduled actionlar aynı threadde çalışabilmesi garanti değil.
+        //
         {
             return Ok();
         }
+        #endregion
 
         public IActionResult Files()
         {
@@ -424,7 +466,7 @@ namespace RxTests.Controllers
             reader.Subscribe(bytesRead => _rxHubContext.Clients.All.SendAsync("SendTime", bytesRead));
             return Ok();
 
-            
+
 
 
 
@@ -443,7 +485,7 @@ namespace RxTests.Controllers
 
             var stringsFromNumbers = from n in oneNumberPerSecond
                                      select new string('*', (int)n);  // Her bir tetikleme için artan sayı kadar tetiklemenin sonucunda yızdız basar.
-            
+
             _rxHubContext.Clients.All.SendAsync("SendTime", DateTime.Now.ToString("Strings from numbers:")); //
 
             stringsFromNumbers.Subscribe(num =>
@@ -490,7 +532,100 @@ namespace RxTests.Controllers
         //}
 
 
+        /* ------------------ TESTING RX ----------------
+         * 
+         *      Testing software has its roots in debugging and demonstrationg code. Having largely matured past manual tests that try to "break the app",
+         * modern quality assurance standards demand a level of automation that can help evaluate and prevent bugs. While teams of testing specialists are
+         * common, more and more coders are expected to provice quality guarantees via automated test suites.
+         * 
+         *       Yardımımıza gelen scheduler; TestScheduler
+         * A virtual scheduler can be conceptualized as a queue of actions to be executed. Each are assigned a point in time when they should be executed.
+         * We use the TestScheduler as a substitute, or test double, for the production IScheduler types. Using this virtual scheduler, we can either
+         * execute all queued actions, or only those up to a specified point in time.
+         * 
+         * 
+         *-------Start()----------
+         * The TestScheduler's Start() method is an effective way to execute everything that has been scheduled.
 
+            -----Stop()-----------
+            All it does, is set the IsEnabled property to false. This prop is used as an internal flag to check whether the internal queue of actions should continue being executed
+            The processing of the queue may indeed be instigated by Start(), however AdvanceTo or AdvanceBy can be used too.
+
+            scheduler.Stop
+
+
+            -------------Schedule Collisions ------------------
+            When scheduling actions, it is possible and even likely that many actions will be scheduled for the same point in time.
+            This most commonly would occuyr when scheduling multiple actions scheduled for the same point in the future. The TestScheduler
+            has a simple way to deal with this. When actions are scheduled, they are marked with the clock time they are scheduled for. If multiple
+            items are scheduled for the same point in time, they are queued in order that they were scheduled; when the clock advances, all
+            items for that point in time are executed in the order that they were scheduled.
+
+
+            ---------------------------------------TESTING RX CODE--------------------------------------------
+
+            We want to execute tests as fast as possible but still maintain the semantics of time. In this example we generate our five values one second apart but
+            pass in our TestScheduler to the Interval method to use instead of the default scheduler.
+
+        */
+
+        
+        public void Testing_with_test_scheduler()
+        {
+            var expectedValues = new long[] { 0, 1, 2, 3, 4 };
+            var actualValues = new List<long>();
+            var scheduler = new TestScheduler();
+            var interval = Observable.Interval(TimeSpan.FromSeconds(1), scheduler).Take(5);
+            interval.Subscribe(actualValues.Add);
+            scheduler.Start();
+            CollectionAssert.AreEqual(expectedValues, actualValues);
+
+        }
+        public IActionResult TestScheduler()
+        {
+            var scheduler = new TestScheduler();
+            var wasExecuted = false;
+            scheduler.Schedule(() => wasExecuted = true);
+            Assert.IsFalse(wasExecuted);
+            scheduler.AdvanceBy(1);
+            Assert.IsTrue(wasExecuted);
+
+            return Ok();
+        }
+
+
+
+        public IActionResult AdvanceTo()
+        //execute all the actions that have been scheduled up to the absolute time specified.The TestScheduler uses ticks as its measurement of time.
+        /*
+         * Alttaki kodu uyarlamaya çalıştım ancak basically yaptığı şey şu; 15 ticke ulaştığımızda bir şey olmuyor.
+         * All work scheduled before 15 ticks had been performed and we had not advanced far enough yet to get to the next schedule action.
+         * */
+        {
+
+            //var scheduler = new TestScheduler();
+            //scheduler.Schedule(num => _rxHubContext.Clients.All.SendAsync("ne?", num));
+            //scheduler.Schedule(TimeSpan.FromTicks(10), num => _rxHubContext.Clients.All.SendAsync("nE?", num));
+            //scheduler.Schedule(TimeSpan.FromTicks(20), num => _rxHubContext.Clients.All.SendAsync("?ne", num));
+            //_rxHubContext.Clients.All.SendAsync("scheduler.AdvanceTo(1);");
+            //scheduler.AdvanceTo(1);
+            //_rxHubContext.Clients.All.SendAsync("scheduler.AdvanceTo(10);");
+            //scheduler.AdvanceTo(10);
+            //_rxHubContext.Clients.All.SendAsync("scheduler.AdvanceTo(15);");
+            //scheduler.AdvanceTo(15);
+            //_rxHubContext.Clients.All.SendAsync("scheduler.AdvanceTo(20);");
+            //scheduler.AdvanceTo(20);
+
+
+
+            return Ok();
+        }
+
+        public IActionResult AdvanceBy()
+        {
+            //AdvanceTo ile aynılar.
+            return Ok();
+        }
         public IActionResult Index()
         {
             return View();
