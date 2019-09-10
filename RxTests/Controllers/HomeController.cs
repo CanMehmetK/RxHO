@@ -262,6 +262,7 @@ namespace RxTests.Controllers
             }
             );
             source.OnError(new TimeoutException());
+            source.OnCompleted();
 
             return Ok();
         }
@@ -311,9 +312,10 @@ namespace RxTests.Controllers
             observable.Subscribe(i => _rxHubContext.Clients.All.SendAsync("SendTime", i));
             Thread.Sleep(period);
             observable.Subscribe(i => _rxHubContext.Clients.All.SendAsync("SendTime", i));
-
             observable.Connect();
 
+
+            
             return Ok();
         }
         #region Bu 2 arkadaş UI application yazarken çok yararlıymış, çünkü; UI threadini blocklamak istemeyiz ama UI thread'indeki UI objectlerini updatelememiz lazım.
@@ -336,7 +338,7 @@ namespace RxTests.Controllers
 
         /*
          *------------Uygun Scheduler'ı seçmek------------
-         *Hangisini ne zaman kullanacağımızı bilmek biraz zaman alabilir ve zorlayıcıdır.
+         * Hangisini ne zaman kullanacağımızı bilmek biraz zaman alabilir ve zorlayıcıdır.
          *                      UI Applications
          * The final subscriber is normally the presentation layer and should control the scheduling.
          * Observe on the DispatcherScheduler to allow updating of ViewModels
@@ -486,14 +488,17 @@ namespace RxTests.Controllers
             var stringsFromNumbers = from n in oneNumberPerSecond
                                      select new string('*', (int)n);  // Her bir tetikleme için artan sayı kadar tetiklemenin sonucunda yızdız basar.
 
+            
             _rxHubContext.Clients.All.SendAsync("SendTime", DateTime.Now.ToString("Strings from numbers:")); //
 
             stringsFromNumbers.Subscribe(num =>
             {
-
+                
                 _rxHubContext.Clients.All.SendAsync("SendTime", num);
 
             });
+
+            
 
 
 
@@ -567,9 +572,27 @@ namespace RxTests.Controllers
             We want to execute tests as fast as possible but still maintain the semantics of time. In this example we generate our five values one second apart but
             pass in our TestScheduler to the Interval method to use instead of the default scheduler.
 
+
+
+
+
+
+
+
+
+
+
+           
         */
 
-        
+        /*
+                               ---------INJECTING SCHEDULER DEPENDENCIES---------
+
+
+
+         */
+
+
         public void Testing_with_test_scheduler()
         {
             var expectedValues = new long[] { 0, 1, 2, 3, 4 };
